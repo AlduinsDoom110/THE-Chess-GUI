@@ -1,6 +1,8 @@
 import os
+import threading
 import pygame
 import chess
+import chess.engine
 import tkinter as tk
 from tkinter import filedialog
 
@@ -34,6 +36,12 @@ class ChessGUI:
         self.settings_open = False
         self.settings_options = ["Engines"]
         self.engines = []
+        self.engine = None
+        self.engine_path = None
+        self.engine_name = ""
+        self.analysis_thread = None
+        self.analysis_running = False
+        self.analysis_info = {"line": "", "nodes": 0, "score": ""}
         # drag and drop state
         self.dragging = False
         self.drag_square = None
@@ -114,6 +122,18 @@ class ChessGUI:
             move_line = moves_font.render(line_text, True, (255, 255, 255))
             self.screen.blit(move_line, (self.board_size + 20, y_offset + i * 20))
 
+        analysis_y = self.board_size - 80
+        if self.engine:
+            info_font = pygame.font.SysFont(None, 20)
+            name = info_font.render(self.engine_name, True, (255, 255, 255))
+            self.screen.blit(name, (self.board_size + 20, analysis_y))
+            line = info_font.render(self.analysis_info.get("line", ""), True, (200, 200, 200))
+            nodes = info_font.render(f"Nodes: {self.analysis_info.get('nodes', 0)}", True, (200, 200, 200))
+            score = info_font.render(f"Score: {self.analysis_info.get('score', '')}", True, (200, 200, 200))
+            self.screen.blit(line, (self.board_size + 20, analysis_y + 20))
+            self.screen.blit(nodes, (self.board_size + 20, analysis_y + 40))
+            self.screen.blit(score, (self.board_size + 20, analysis_y + 60))
+
     def draw_settings_dropdown(self, font):
         base_rect = self.option_rects.get("Settings")
         if not base_rect:
@@ -140,6 +160,8 @@ class ChessGUI:
         self.board.reset()
         self.selected_square = None
         self.move_history = []
+        if self.engine:
+            self.start_engine_analysis()
 
     def undo_move(self):
         if len(self.board.move_stack) > 0:
@@ -147,6 +169,8 @@ class ChessGUI:
             if self.move_history:
                 self.move_history.pop()
         self.selected_square = None
+        if self.engine:
+            self.start_engine_analysis()
 
     def start_drag(self, pos):
         self.settings_open = False
@@ -177,6 +201,8 @@ class ChessGUI:
                 san = self.board.san(move)
                 self.board.push(move)
                 self.move_history.append(san)
+                if self.engine:
+                    self.start_engine_analysis()
         self.dragging = False
         self.drag_square = None
         self.dragged_piece = None
@@ -216,6 +242,7 @@ class ChessGUI:
             path = filedialog.askopenfilename(title="Select Engine")
             if path:
                 self.engines.append(path)
+                self.start_engine_analysis(path)
 
         import_btn = tk.Button(window, text="Import Engine", command=import_engine)
         import_btn.pack(pady=5)
@@ -224,6 +251,77 @@ class ChessGUI:
         close_btn.pack(pady=10)
 
         window.mainloop()
+
+    def start_engine_analysis(self, path=None):
+        if path:
+            self.engine_path = path
+        if not self.engine_path:
+            return
+        if not self.engine or path:
+            self.stop_engine()
+            try:
+                self.engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
+            except Exception as e:
+                print(f"Failed to start engine: {e}")
+                self.engine = None
+                return
+            self.engine_name = os.path.basename(self.engine_path)
+        if self.analysis_thread and self.analysis_thread.is_alive():
+            self.analysis_running = False
+            self.analysis_thread.join()
+        self.analysis_running = True
+        self.analysis_thread = threading.Thread(target=self.analysis_loop, daemon=True)
+        self.analysis_thread.start()
+
+    def stop_engine(self):
+        self.analysis_running = False
+        if self.analysis_thread and self.analysis_thread.is_alive():
+            self.analysis_thread.join()
+        if self.engine:
+            try:
+                self.engine.quit()
+            except Exception:
+                pass
+            self.engine = None
+
+    def analysis_loop(self):
+        board_len = len(self.board.move_stack)
+        while self.analysis_running and self.engine:
+            analysis_board = self.board.copy()
+            board_len = len(analysis_board.move_stack)
+            try:
+                with self.engine.analysis(analysis_board, chess.engine.Limit(infinite=True)) as analysis:
+                    for info in analysis:
+                        if not self.analysis_running:
+                            analysis.stop()
+                            break
+                        if len(self.board.move_stack) != board_len:
+                            analysis.stop()
+                            break
+                        pv = info.get("pv")
+                        if pv:
+                            temp_board = analysis_board.copy()
+                            moves = []
+                            for m in pv:
+                                moves.append(temp_board.san(m))
+                                temp_board.push(m)
+                            line = " ".join(moves)
+                        else:
+                            line = self.analysis_info.get("line", "")
+                        score = info.get("score")
+                        if score is not None:
+                            try:
+                                cp = score.white().score(mate_score=100000)
+                                score_text = f"{cp:+d}"
+                            except Exception:
+                                score_text = str(score)
+                        else:
+                            score_text = self.analysis_info.get("score", "")
+                        nodes = info.get("nodes", self.analysis_info.get("nodes", 0))
+                        self.analysis_info = {"line": line, "nodes": nodes, "score": score_text}
+            except Exception as e:
+                print("Engine analysis error:", e)
+                break
 
     def run(self):
         running = True
@@ -255,6 +353,7 @@ class ChessGUI:
             pygame.display.flip()
             self.clock.tick(FPS)
 
+        self.stop_engine()
         pygame.quit()
 
 
