@@ -290,7 +290,7 @@ class ChessGUI:
             analysis_board = self.board.copy()
             board_len = len(analysis_board.move_stack)
             try:
-                with self.engine.analysis(analysis_board, chess.engine.Limit(infinite=True)) as analysis:
+                with self.engine.analysis(analysis_board, chess.engine.Limit()) as analysis:
                     for info in analysis:
                         if not self.analysis_running:
                             analysis.stop()
