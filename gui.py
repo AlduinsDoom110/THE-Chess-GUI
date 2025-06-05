@@ -1,6 +1,8 @@
 import os
 import pygame
 import chess
+import tkinter as tk
+from tkinter import filedialog
 
 # Constants
 START_BOARD_SIZE = 640
@@ -28,6 +30,10 @@ class ChessGUI:
         self.selected_square = None
         self.move_history = []
         self.option_rects = {}
+        self.dropdown_rects = {}
+        self.settings_open = False
+        self.settings_options = ["Engines"]
+        self.engines = []
         # drag and drop state
         self.dragging = False
         self.drag_square = None
@@ -98,12 +104,28 @@ class ChessGUI:
             self.option_rects[text] = button_rect
             self.screen.blit(line, text_rect.topleft)
 
+        if self.settings_open:
+            self.draw_settings_dropdown(font)
+
         # draw move history below the options
         moves_font = pygame.font.SysFont(None, 20)
         y_offset = 60 + len(options) * 30 + 20
         for i, line_text in enumerate(self.format_move_history()):
             move_line = moves_font.render(line_text, True, (255, 255, 255))
             self.screen.blit(move_line, (self.board_size + 20, y_offset + i * 20))
+
+    def draw_settings_dropdown(self, font):
+        base_rect = self.option_rects.get("Settings")
+        if not base_rect:
+            return
+        self.dropdown_rects = {}
+        for i, name in enumerate(self.settings_options):
+            rect = pygame.Rect(base_rect.left, base_rect.bottom + i * 28, base_rect.width, 25)
+            pygame.draw.rect(self.screen, (60, 60, 60), rect)
+            text = font.render(name, True, (220, 220, 220))
+            text_rect = text.get_rect(center=rect.center)
+            self.dropdown_rects[name] = rect
+            self.screen.blit(text, text_rect.topleft)
 
     def format_move_history(self):
         lines = []
@@ -127,6 +149,7 @@ class ChessGUI:
         self.selected_square = None
 
     def start_drag(self, pos):
+        self.settings_open = False
         if pos[0] >= self.board_size or pos[1] >= self.board_size:
             return
         x, y = pos[0] // self.square_size, pos[1] // self.square_size
@@ -161,13 +184,46 @@ class ChessGUI:
 
 
     def handle_sidebar_click(self, pos):
+        if self.settings_open:
+            for name, rect in self.dropdown_rects.items():
+                if rect.collidepoint(pos):
+                    if name == "Engines":
+                        self.open_engines_window()
+                    self.settings_open = False
+                    return
+
         for name, rect in self.option_rects.items():
             if rect.collidepoint(pos):
                 if name == "New Game":
                     self.reset_game()
                 elif name == "Undo":
                     self.undo_move()
+                elif name == "Settings":
+                    self.settings_open = not self.settings_open
                 return
+
+        self.settings_open = False
+
+    def open_engines_window(self):
+        window = tk.Tk()
+        window.title("Engine Settings")
+        window.geometry("300x150")
+
+        label = tk.Label(window, text="Manage Chess Engines", font=("Arial", 12))
+        label.pack(pady=10)
+
+        def import_engine():
+            path = filedialog.askopenfilename(title="Select Engine")
+            if path:
+                self.engines.append(path)
+
+        import_btn = tk.Button(window, text="Import Engine", command=import_engine)
+        import_btn.pack(pady=5)
+
+        close_btn = tk.Button(window, text="Close", command=window.destroy)
+        close_btn.pack(pady=10)
+
+        window.mainloop()
 
     def run(self):
         running = True
