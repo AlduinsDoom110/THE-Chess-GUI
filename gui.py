@@ -3,6 +3,7 @@ import threading
 import pygame
 import chess
 import chess.engine
+import chess.pgn
 import tkinter as tk
 from tkinter import filedialog
 
@@ -34,7 +35,9 @@ class ChessGUI:
         self.option_rects = {}
         self.dropdown_rects = {}
         self.settings_open = False
-        self.settings_options = ["Engines"]
+        self.settings_options = ["Engines", "Toggle Coordinates", "Toggle Engine"]
+        self.board_flipped = False
+        self.show_coords = True
         self.engines = []
         self.engine = None
         self.engine_path = None
@@ -60,17 +63,60 @@ class ChessGUI:
                     image = pygame.image.load(path).convert_alpha()
                     self.pieces[color+piece] = image
 
+    def pixel_to_square(self, pos):
+        x, y = pos[0] // self.square_size, pos[1] // self.square_size
+        if self.board_flipped:
+            file = 7 - x
+            rank = y
+        else:
+            file = x
+            rank = 7 - y
+        return chess.square(file, rank)
+
+    def square_to_pixel(self, square):
+        file = chess.square_file(square)
+        rank = chess.square_rank(square)
+        if self.board_flipped:
+            display_x = 7 - file
+            display_y = rank
+        else:
+            display_x = file
+            display_y = 7 - rank
+        return display_x * self.square_size, display_y * self.square_size
+
     def draw_board(self):
         colors = [WHITE, GREEN]
-        for y in range(8):
-            for x in range(8):
-                rect = pygame.Rect(x*self.square_size, y*self.square_size, self.square_size, self.square_size)
-                color = colors[(x+y) % 2]
-                if self.selected_square == chess.square(x, 7-y):
+        for display_y in range(8):
+            for display_x in range(8):
+                if self.board_flipped:
+                    file = 7 - display_x
+                    rank = display_y
+                else:
+                    file = display_x
+                    rank = 7 - display_y
+                square = chess.square(file, rank)
+                rect = pygame.Rect(display_x*self.square_size, display_y*self.square_size,
+                                   self.square_size, self.square_size)
+                color = colors[(display_x+display_y) % 2]
+                if self.selected_square == square:
                     color = SELECT
                 pygame.draw.rect(self.screen, color, rect)
 
-                # valid move highlighting removed for cleaner look
+        if self.show_coords:
+            self.draw_coordinates()
+
+    def draw_coordinates(self):
+        font = pygame.font.SysFont(None, 16)
+        files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        ranks = ['1', '2', '3', '4', '5', '6', '7', '8']
+        for i in range(8):
+            file_index = 7 - i if self.board_flipped else i
+            rank_index = i if self.board_flipped else 7 - i
+            file_text = font.render(files[file_index], True, (0, 0, 0))
+            rank_text = font.render(ranks[rank_index], True, (0, 0, 0))
+            self.screen.blit(file_text, (i * self.square_size + self.square_size - 12,
+                                         self.board_size - 18))
+            self.screen.blit(rank_text, (2, i * self.square_size + 2))
         
     def draw_pieces(self):
         for square in chess.SQUARES:
@@ -78,13 +124,19 @@ class ChessGUI:
                 continue
             piece = self.board.piece_at(square)
             if piece:
-                x = chess.square_file(square)
-                y = 7 - chess.square_rank(square)
+                file = chess.square_file(square)
+                rank = chess.square_rank(square)
+                if self.board_flipped:
+                    display_x = 7 - file
+                    display_y = rank
+                else:
+                    display_x = file
+                    display_y = 7 - rank
                 piece_code = ("w" if piece.color == chess.WHITE else "b") + piece.symbol().lower()
                 img = self.pieces.get(piece_code)
                 if img:
                     scaled = pygame.transform.smoothscale(img, (self.square_size, self.square_size))
-                    rect = scaled.get_rect(topleft=(x*self.square_size, y*self.square_size))
+                    rect = scaled.get_rect(topleft=(display_x*self.square_size, display_y*self.square_size))
                     self.screen.blit(scaled, rect)
 
         if self.dragging and self.dragged_piece:
@@ -101,7 +153,7 @@ class ChessGUI:
         font = pygame.font.SysFont(None, 24)
         title = font.render("Options", True, (255, 255, 255))
         self.screen.blit(title, (self.board_size + 20, 20))
-        options = ["New Game", "Undo", "Settings"]
+        options = ["New Game", "Undo", "Flip Board", "Save Game", "Settings"]
         mouse_pos = pygame.mouse.get_pos()
         for i, text in enumerate(options):
             button_rect = pygame.Rect(self.board_size + 10, 60 + i*30, SIDEBAR_WIDTH - 20, 25)
@@ -177,8 +229,7 @@ class ChessGUI:
         self.settings_open = False
         if pos[0] >= self.board_size or pos[1] >= self.board_size:
             return
-        x, y = pos[0] // self.square_size, pos[1] // self.square_size
-        square = chess.square(x, 7 - y)
+        square = self.pixel_to_square(pos)
         piece = self.board.piece_at(square)
         if piece and piece.color == self.board.turn:
             self.dragging = True
@@ -195,8 +246,7 @@ class ChessGUI:
         if not self.dragging:
             return
         if pos[0] < self.board_size and pos[1] < self.board_size:
-            x, y = pos[0] // self.square_size, pos[1] // self.square_size
-            square = chess.square(x, 7 - y)
+            square = self.pixel_to_square(pos)
             move = chess.Move(self.drag_square, square)
             if move in self.board.legal_moves:
                 san = self.board.san(move)
@@ -216,6 +266,10 @@ class ChessGUI:
                 if rect.collidepoint(pos):
                     if name == "Engines":
                         self.open_engines_window()
+                    elif name == "Toggle Coordinates":
+                        self.show_coords = not self.show_coords
+                    elif name == "Toggle Engine":
+                        self.toggle_engine()
                     self.settings_open = False
                     return
 
@@ -225,6 +279,10 @@ class ChessGUI:
                     self.reset_game()
                 elif name == "Undo":
                     self.undo_move()
+                elif name == "Flip Board":
+                    self.board_flipped = not self.board_flipped
+                elif name == "Save Game":
+                    self.save_game()
                 elif name == "Settings":
                     self.settings_open = not self.settings_open
                 return
@@ -271,6 +329,24 @@ class ChessGUI:
                     self.start_engine_analysis(path)
             except Exception as e:
                 print(f"Failed to load engine path: {e}")
+
+    def save_game(self):
+        path = filedialog.asksaveasfilename(defaultextension=".pgn",
+                                            filetypes=[("PGN files", "*.pgn")])
+        if not path:
+            return
+        game = chess.pgn.Game()
+        node = game
+        for move in self.board.move_stack:
+            node = node.add_variation(move)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(game))
+
+    def toggle_engine(self):
+        if self.engine:
+            self.stop_engine()
+        else:
+            self.start_engine_analysis()
 
     def start_engine_analysis(self, path=None):
         if path:

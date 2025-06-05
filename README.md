@@ -9,7 +9,9 @@ A simple chess interface written in Python. The GUI is powered by **pygame** and
 - Press **R** to reset the board at any time.
 - Dark squares are now green.
 - The board scales when resizing the window.
-- A sidebar provides placeholder options for future features.
+- Sidebar buttons for starting a new game, undoing moves, flipping the board and saving the game.
+- Settings drop-down lets you import engines, toggle coordinates and toggle analysis.
+- Optional board coordinates can be displayed around the board.
 - Import an engine once and it will be reused on the next launch.
 - The analysis display shows up to five half-moves from the engine's best line.
 
