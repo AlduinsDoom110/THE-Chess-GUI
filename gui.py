@@ -28,6 +28,11 @@ class ChessGUI:
         self.selected_square = None
         self.move_history = []
         self.option_rects = {}
+        # drag and drop state
+        self.dragging = False
+        self.drag_square = None
+        self.dragged_piece = None
+        self.drag_pos = (0, 0)
         self.load_textures()
 
     def load_textures(self):
@@ -50,16 +55,12 @@ class ChessGUI:
                     color = SELECT
                 pygame.draw.rect(self.screen, color, rect)
 
-                # highlight valid moves
-                if self.selected_square is not None:
-                    selected_piece = self.board.piece_at(self.selected_square)
-                    if selected_piece and selected_piece.color == self.board.turn:
-                        for move in self.board.legal_moves:
-                            if move.from_square == self.selected_square and move.to_square == chess.square(x, 7-y):
-                                pygame.draw.rect(self.screen, HIGHLIGHT, rect)
+                # valid move highlighting removed for cleaner look
         
     def draw_pieces(self):
         for square in chess.SQUARES:
+            if self.dragging and square == self.drag_square:
+                continue
             piece = self.board.piece_at(square)
             if piece:
                 x = chess.square_file(square)
@@ -71,6 +72,14 @@ class ChessGUI:
                     rect = scaled.get_rect(topleft=(x*self.square_size, y*self.square_size))
                     self.screen.blit(scaled, rect)
 
+        if self.dragging and self.dragged_piece:
+            piece_code = ("w" if self.dragged_piece.color == chess.WHITE else "b") + self.dragged_piece.symbol().lower()
+            img = self.pieces.get(piece_code)
+            if img:
+                scaled = pygame.transform.smoothscale(img, (self.square_size, self.square_size))
+                rect = scaled.get_rect(center=self.drag_pos)
+                self.screen.blit(scaled, rect)
+
     def draw_sidebar(self):
         sidebar_rect = pygame.Rect(self.board_size, 0, SIDEBAR_WIDTH, self.board_size)
         pygame.draw.rect(self.screen, (40, 40, 40), sidebar_rect)
@@ -78,11 +87,16 @@ class ChessGUI:
         title = font.render("Options", True, (255, 255, 255))
         self.screen.blit(title, (self.board_size + 20, 20))
         options = ["New Game", "Undo", "Settings"]
+        mouse_pos = pygame.mouse.get_pos()
         for i, text in enumerate(options):
+            button_rect = pygame.Rect(self.board_size + 10, 60 + i*30, SIDEBAR_WIDTH - 20, 25)
+            hover = button_rect.collidepoint(mouse_pos)
+            color = (70, 70, 70) if hover else (50, 50, 50)
+            pygame.draw.rect(self.screen, color, button_rect)
             line = font.render(text, True, (200, 200, 200))
-            rect = line.get_rect(topleft=(self.board_size + 20, 60 + i*30))
-            self.option_rects[text] = rect
-            self.screen.blit(line, rect.topleft)
+            text_rect = line.get_rect(center=button_rect.center)
+            self.option_rects[text] = button_rect
+            self.screen.blit(line, text_rect.topleft)
 
         # draw move history below the options
         moves_font = pygame.font.SysFont(None, 20)
@@ -112,22 +126,39 @@ class ChessGUI:
                 self.move_history.pop()
         self.selected_square = None
 
-    def handle_click(self, pos):
+    def start_drag(self, pos):
         if pos[0] >= self.board_size or pos[1] >= self.board_size:
             return
         x, y = pos[0] // self.square_size, pos[1] // self.square_size
         square = chess.square(x, 7 - y)
-        if self.selected_square is None:
-            piece = self.board.piece_at(square)
-            if piece and piece.color == self.board.turn:
-                self.selected_square = square
-        else:
-            move = chess.Move(self.selected_square, square)
+        piece = self.board.piece_at(square)
+        if piece and piece.color == self.board.turn:
+            self.dragging = True
+            self.drag_square = square
+            self.dragged_piece = piece
+            self.drag_pos = pos
+            self.selected_square = square
+
+    def update_drag(self, pos):
+        if self.dragging:
+            self.drag_pos = pos
+
+    def end_drag(self, pos):
+        if not self.dragging:
+            return
+        if pos[0] < self.board_size and pos[1] < self.board_size:
+            x, y = pos[0] // self.square_size, pos[1] // self.square_size
+            square = chess.square(x, 7 - y)
+            move = chess.Move(self.drag_square, square)
             if move in self.board.legal_moves:
                 san = self.board.san(move)
                 self.board.push(move)
                 self.move_history.append(san)
-            self.selected_square = None
+        self.dragging = False
+        self.drag_square = None
+        self.dragged_piece = None
+        self.selected_square = None
+
 
     def handle_sidebar_click(self, pos):
         for name, rect in self.option_rects.items():
@@ -148,7 +179,11 @@ class ChessGUI:
                     if event.pos[0] >= self.board_size:
                         self.handle_sidebar_click(event.pos)
                     else:
-                        self.handle_click(event.pos)
+                        self.start_drag(event.pos)
+                if event.type == pygame.MOUSEMOTION:
+                    self.update_drag(event.pos)
+                if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    self.end_drag(event.pos)
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         self.reset_game()
