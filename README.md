@@ -7,6 +7,9 @@ A simple chess interface written in Python. The GUI is powered by **pygame** and
 - Click on a piece to select it and click on a valid destination to move.
 - Highlights possible moves for the selected piece.
 - Press **R** to reset the board at any time.
+- Dark squares are now green.
+- The board scales when resizing the window.
+- A sidebar provides placeholder options for future features.
 
 ## Requirements
 

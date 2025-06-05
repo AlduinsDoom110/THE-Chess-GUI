@@ -3,13 +3,14 @@ import pygame
 import chess
 
 # Constants
-WIDTH, HEIGHT = 640, 640
-SQUARE_SIZE = WIDTH // 8
+START_BOARD_SIZE = 640
+SIDEBAR_WIDTH = 200
 FPS = 60
+WIDTH, HEIGHT = START_BOARD_SIZE + SIDEBAR_WIDTH, START_BOARD_SIZE
 
 # Colors
 WHITE = (245, 245, 220)
-BROWN = (139, 69, 19)
+GREEN = (118, 150, 86)
 HIGHLIGHT = (186, 202, 68)
 SELECT = (246, 246, 105)
 
@@ -17,7 +18,10 @@ SELECT = (246, 246, 105)
 class ChessGUI:
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.width, self.height = WIDTH, HEIGHT
+        self.board_size = START_BOARD_SIZE
+        self.square_size = self.board_size // 8
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
         pygame.display.set_caption("THE Chess GUI")
         self.clock = pygame.time.Clock()
         self.board = chess.Board()
@@ -31,15 +35,14 @@ class ChessGUI:
                 name = f"{color}{piece}.png"
                 path = os.path.join('Textures', name)
                 if os.path.exists(path):
-                    image = pygame.image.load(path)
-                    image = pygame.transform.smoothscale(image, (SQUARE_SIZE, SQUARE_SIZE))
+                    image = pygame.image.load(path).convert_alpha()
                     self.pieces[color+piece] = image
 
     def draw_board(self):
-        colors = [WHITE, BROWN]
+        colors = [WHITE, GREEN]
         for y in range(8):
             for x in range(8):
-                rect = pygame.Rect(x*SQUARE_SIZE, y*SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE)
+                rect = pygame.Rect(x*self.square_size, y*self.square_size, self.square_size, self.square_size)
                 color = colors[(x+y) % 2]
                 if self.selected_square == chess.square(x, 7-y):
                     color = SELECT
@@ -62,15 +65,29 @@ class ChessGUI:
                 piece_code = ("w" if piece.color == chess.WHITE else "b") + piece.symbol().lower()
                 img = self.pieces.get(piece_code)
                 if img:
-                    rect = img.get_rect(topleft=(x*SQUARE_SIZE, y*SQUARE_SIZE))
-                    self.screen.blit(img, rect)
+                    scaled = pygame.transform.smoothscale(img, (self.square_size, self.square_size))
+                    rect = scaled.get_rect(topleft=(x*self.square_size, y*self.square_size))
+                    self.screen.blit(scaled, rect)
+
+    def draw_sidebar(self):
+        sidebar_rect = pygame.Rect(self.board_size, 0, SIDEBAR_WIDTH, self.board_size)
+        pygame.draw.rect(self.screen, (40, 40, 40), sidebar_rect)
+        font = pygame.font.SysFont(None, 24)
+        title = font.render("Options", True, (255, 255, 255))
+        self.screen.blit(title, (self.board_size + 20, 20))
+        options = ["New Game", "Undo", "Settings"]
+        for i, text in enumerate(options):
+            line = font.render(text, True, (200, 200, 200))
+            self.screen.blit(line, (self.board_size + 20, 60 + i*30))
 
     def reset_game(self):
         self.board.reset()
         self.selected_square = None
 
     def handle_click(self, pos):
-        x, y = pos[0] // SQUARE_SIZE, pos[1] // SQUARE_SIZE
+        if pos[0] >= self.board_size or pos[1] >= self.board_size:
+            return
+        x, y = pos[0] // self.square_size, pos[1] // self.square_size
         square = chess.square(x, 7 - y)
         if self.selected_square is None:
             piece = self.board.piece_at(square)
@@ -93,9 +110,15 @@ class ChessGUI:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         self.reset_game()
+                if event.type == pygame.VIDEORESIZE:
+                    self.width, self.height = event.w, event.h
+                    self.board_size = min(self.height, self.width - SIDEBAR_WIDTH)
+                    self.square_size = self.board_size // 8
+                    self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
 
             self.draw_board()
             self.draw_pieces()
+            self.draw_sidebar()
             pygame.display.flip()
             self.clock.tick(FPS)
 
