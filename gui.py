@@ -26,6 +26,8 @@ class ChessGUI:
         self.clock = pygame.time.Clock()
         self.board = chess.Board()
         self.selected_square = None
+        self.move_history = []
+        self.option_rects = {}
         self.load_textures()
 
     def load_textures(self):
@@ -78,10 +80,36 @@ class ChessGUI:
         options = ["New Game", "Undo", "Settings"]
         for i, text in enumerate(options):
             line = font.render(text, True, (200, 200, 200))
-            self.screen.blit(line, (self.board_size + 20, 60 + i*30))
+            rect = line.get_rect(topleft=(self.board_size + 20, 60 + i*30))
+            self.option_rects[text] = rect
+            self.screen.blit(line, rect.topleft)
+
+        # draw move history below the options
+        moves_font = pygame.font.SysFont(None, 20)
+        y_offset = 60 + len(options) * 30 + 20
+        for i, line_text in enumerate(self.format_move_history()):
+            move_line = moves_font.render(line_text, True, (255, 255, 255))
+            self.screen.blit(move_line, (self.board_size + 20, y_offset + i * 20))
+
+    def format_move_history(self):
+        lines = []
+        for i in range(0, len(self.move_history), 2):
+            number = i // 2 + 1
+            white = self.move_history[i]
+            black = self.move_history[i + 1] if i + 1 < len(self.move_history) else ""
+            lines.append(f"{number}. {white} {black}")
+        return lines
 
     def reset_game(self):
         self.board.reset()
+        self.selected_square = None
+        self.move_history = []
+
+    def undo_move(self):
+        if len(self.board.move_stack) > 0:
+            self.board.pop()
+            if self.move_history:
+                self.move_history.pop()
         self.selected_square = None
 
     def handle_click(self, pos):
@@ -96,8 +124,19 @@ class ChessGUI:
         else:
             move = chess.Move(self.selected_square, square)
             if move in self.board.legal_moves:
+                san = self.board.san(move)
                 self.board.push(move)
+                self.move_history.append(san)
             self.selected_square = None
+
+    def handle_sidebar_click(self, pos):
+        for name, rect in self.option_rects.items():
+            if rect.collidepoint(pos):
+                if name == "New Game":
+                    self.reset_game()
+                elif name == "Undo":
+                    self.undo_move()
+                return
 
     def run(self):
         running = True
@@ -106,7 +145,10 @@ class ChessGUI:
                 if event.type == pygame.QUIT:
                     running = False
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self.handle_click(event.pos)
+                    if event.pos[0] >= self.board_size:
+                        self.handle_sidebar_click(event.pos)
+                    else:
+                        self.handle_click(event.pos)
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         self.reset_game()
