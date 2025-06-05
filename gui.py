@@ -48,6 +48,7 @@ class ChessGUI:
         self.dragged_piece = None
         self.drag_pos = (0, 0)
         self.load_textures()
+        self.load_engine_path()
 
     def load_textures(self):
         self.pieces = {}
@@ -242,7 +243,9 @@ class ChessGUI:
             path = filedialog.askopenfilename(title="Select Engine")
             if path:
                 self.engines.append(path)
+                self.save_engine_path(path)
                 self.start_engine_analysis(path)
+                window.destroy()
 
         import_btn = tk.Button(window, text="Import Engine", command=import_engine)
         import_btn.pack(pady=5)
@@ -251,6 +254,23 @@ class ChessGUI:
         close_btn.pack(pady=10)
 
         window.mainloop()
+
+    def save_engine_path(self, path):
+        try:
+            with open("engine_path.txt", "w", encoding="utf-8") as f:
+                f.write(path)
+        except Exception as e:
+            print(f"Failed to save engine path: {e}")
+
+    def load_engine_path(self):
+        if os.path.exists("engine_path.txt"):
+            try:
+                with open("engine_path.txt", "r", encoding="utf-8") as f:
+                    path = f.read().strip()
+                if path:
+                    self.start_engine_analysis(path)
+            except Exception as e:
+                print(f"Failed to load engine path: {e}")
 
     def start_engine_analysis(self, path=None):
         if path:
@@ -302,7 +322,9 @@ class ChessGUI:
                         if pv:
                             temp_board = analysis_board.copy()
                             moves = []
-                            for m in pv:
+                            for i, m in enumerate(pv):
+                                if i >= 5:
+                                    break
                                 moves.append(temp_board.san(m))
                                 temp_board.push(m)
                             line = " ".join(moves)
